@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sana Scientific Calculator</title>
+  <meta name="description" content="Sana Scientific Calculator with dual vision modes, solar lemon-yellow aesthetic, and full scientific math functions." />
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            tech: ['Chakra Petch', 'sans-serif'],
+            calc: ['JetBrains Mono', 'monospace'],
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- React 18 & Babel Standalone (Runs natively in browser) -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow-x: hidden;
+    }
+    .font-tech { font-family: 'Chakra Petch', sans-serif; }
+    .font-calc { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 9999px; }
+    .dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Web Audio Sound Engine
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+      }
+      init() {
+        if (!this.ctx && typeof window !== 'undefined') {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) this.ctx = new AudioContextClass();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+      }
+      playClick(tone = 'normal') {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const freqs = { normal: 820, action: 1100, special: 640 };
+          const now = this.ctx.currentTime;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freqs[tone] || 820, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.035);
+          gain.gain.setValueAtTime(0.06, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.04);
+        } catch (e) {}
+      }
+      playEnter() {
+        if (!this.enabled) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(540, now);
+          osc.frequency.exponentialRampToValueAtTime(880, now + 0.06);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.07);
+        } catch (e) {}
+      }
+    }
+    const sound = new SoundEngine();
+
+    // Scientific Constants
+    const CONSTANTS = [
+      { symbol: 'π', name: 'Pi', value: Math.PI },
+      { symbol: 'e', name: "Euler's Number", value: Math.E },
+      { symbol: 'φ', name: 'Golden Ratio', value: 1.618033988749895 },
+      { symbol: 'c', name: 'Speed of Light', value: 299792458 },
+      { symbol: 'h', name: "Planck's Constant", value: 6.62607015e-34 },
+      { symbol: 'G', name: 'Gravitational Constant', value: 6.6743e-11 },
+      { symbol: 'g', name: 'Standard Gravity', value: 9.80665 },
+      { symbol: 'N_A', name: 'Avogadro Constant', value: 6.02214076e23 },
+      { symbol: 'R', name: 'Gas Constant', value: 8.314462618 }
+    ];
+
+    function formatNumber(val, mode = 'NORM') {
+      if (!Number.isFinite(val)) {
+        if (Number.isNaN(val)) return 'Error: Undefined';
+        return val > 0 ? 'Infinity' : '-Infinity';
+      }
+      if (Math.abs(val) < 1e-15 && Math.abs(val) > 0) return '0';
+      const rounded = Math.round(val);
+      if (Math.abs(val - rounded) < 1e-12) val = rounded;
+      if (mode === 'FIX2') return val.toFixed(2);
+      if (mode === 'SCI') return val.toExponential(6);
+      if (Math.abs(val) >= 1e12 || (Math.abs(val) < 1e-6 && val !== 0)) {
+        return val.toExponential(6).replace(/\.?0+e/, 'e');
+      }
+      return parseFloat(val.toPrecision(12)).toString();
+    }
+
+    function evaluateMath(expr, angleMode, prevAns = 0) {
+      if (!expr || expr.trim() === '') return 0;
+      let s = expr
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/−/g, '-')
+        .replace(/π/g, `(${Math.PI})`)
+        .replace(/\bAns\b/gi, `(${prevAns})`)
+        .replace(/\be\b/g, `(${Math.E})`)
+        .replace(/φ/g, `(1.618033988749895)`);
+
+      s = s.replace(/√\(/g, 'Math.sqrt(');
+      s = s.replace(/√([0-9.]+)/g, 'Math.sqrt($1)');
+      s = s.replace(/∛\(/g, 'Math.cbrt(');
+      s = s.replace(/∛([0-9.]+)/g, 'Math.cbrt($1)');
+      s = s.replace(/([0-9.]+)E([+-]?[0-9]+)/g, '($1*(10**$2))');
+      s = s.replace(/\^/g, '**');
+
+      const toRad = (x) => (angleMode === 'DEG' ? (x * Math.PI) / 180 : x);
+      const fromRad = (x) => (angleMode === 'DEG' ? (x * 180) / Math.PI : x);
+
+      s = s.replace(/\bsin\(([^)]+)\)/g, (_, a) => `Math.sin(${toRad(eval(a))})`);
+      s = s.replace(/\bcos\(([^)]+)\)/g, (_, a) => `Math.cos(${toRad(eval(a))})`);
+      s = s.replace(/\btan\(([^)]+)\)/g, (_, a) => `Math.tan(${toRad(eval(a))})`);
+      s = s.replace(/\basin\(([^)]+)\)/g, (_, a) => `${fromRad(Math.asin(eval(a)))}`);
+      s = s.replace(/\bacos\(([^)]+)\)/g, (_, a) => `${fromRad(Math.acos(eval(a)))}`);
+      s = s.replace(/\batan\(([^)]+)\)/g, (_, a) => `${fromRad(Math.atan(eval(a)))}`);
+
+      s = s.replace(/\bsinh\(([^)]+)\)/g, (_, a) => `Math.sinh(${a})`);
+      s = s.replace(/\bcosh\(([^)]+)\)/g, (_, a) => `Math.cosh(${a})`);
+      s = s.replace(/\btanh\(([^)]+)\)/g, (_, a) => `Math.tanh(${a})`);
+      s = s.replace(/\bln\(([^)]+)\)/g, (_, a) => `Math.log(${a})`);
+      s = s.replace(/\blog\(([^)]+)\)/g, (_, a) => `Math.log10(${a})`);
+      s = s.replace(/\babs\(([^)]+)\)/g, (_, a) => `Math.abs(${a})`);
+
+      let openCount = 0;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === '(') openCount++;
+        if (s[i] === ')') openCount--;
+      }
+      while (openCount > 0) { s += ')'; openCount--; }
+
+      const fn = new Function(`return (${s});`);
+      return fn();
+    }
+
+    function App() {
+      const [visionMode, setVisionMode] = useState('solar-lemon');
+      const [expression, setExpression] = useState('');
+      const [result, setResult] = useState('0');
+      const [angleMode, setAngleMode] = useState('DEG');
+      const [floatMode, setFloatMode] = useState('NORM');
+      const [isSecond, setIsSecond] = useState(false);
+      const [isHyp, setIsHyp] = useState(false);
+      const [prevAns, setPrevAns] = useState(0);
+      const [history, setHistory] = useState([]);
+      const [showHistory, setShowHistory] = useState(false);
+      const [showConstants, setShowConstants] = useState(false);
+      const [soundEnabled, setSoundEnabled] = useState(true);
+      const [copied, setCopied] = useState(false);
+
+      const isSolar = visionMode === 'solar-lemon';
+
+      useEffect(() => {
+        if (visionMode === 'obsidian-cyber') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }, [visionMode]);
+
+      useEffect(() => {
+        if (!expression || expression.trim() === '') {
+          setResult('0');
+          return;
+        }
+        try {
+          const val = evaluateMath(expression, angleMode, prevAns);
+          setResult(formatNumber(val, floatMode));
+        } catch (e) {}
+      }, [expression, angleMode, floatMode, prevAns]);
+
+      const handleInput = (char) => {
+        setExpression((prev) => (prev === 'Error' || prev === 'Syntax error' ? char : prev + char));
+      };
+
+      const handleDelete = () => {
+        setExpression((prev) => {
+          if (prev.length <= 1) return '';
+          const multi = ['asin(', 'acos(', 'atan(', 'sin(', 'cos(', 'tan(', 'sinh(', 'cosh(', 'tanh(', 'log(', 'ln(', 'abs(', 'Ans'];
+          for (const m of multi) {
+            if (prev.endsWith(m)) return prev.slice(0, -m.length);
+          }
+          return prev.slice(0, -1);
+        });
+      };
+
+      const handleClear = () => {
+        setExpression('');
+        setResult('0');
+        setIsSecond(false);
+        setIsHyp(false);
+      };
+
+      const handleEvaluate = () => {
+        if (!expression || expression.trim() === '') return;
+        try {
+          const val = evaluateMath(expression, angleMode, prevAns);
+          const formatted = formatNumber(val, floatMode);
+          setResult(formatted);
+          setPrevAns(val);
+          setHistory((h) => [{ id: Date.now(), expression, result: formatted }, ...h.slice(0, 30)]);
+          setExpression(formatted);
+        } catch (e) {
+          setResult('Error');
+        }
+      };
+
+      const handleCopy = () => {
+        if (!result) return;
+        navigator.clipboard.writeText(result);
+        setCopied(true);
+        sound.playClick('special');
+        setTimeout(() => setCopied(false), 1500);
+      };
+
+      const baseKey = 'relative flex flex-col items-center justify-center rounded-xl font-medium transition-all duration-150 active:scale-95 active:translate-y-0.5 cursor-pointer shadow-sm select-none';
+      const sciKey = isSolar
+        ? 'bg-neutral-800 text-yellow-100 hover:bg-neutral-700 border-b-2 border-neutral-950 text-xs py-2'
+        : 'bg-neutral-900 text-yellow-300 hover:bg-neutral-800 border border-yellow-500/20 text-xs py-2';
+      const numKey = isSolar
+        ? 'bg-white text-neutral-900 hover:bg-neutral-100 border-b-2 border-amber-200 font-calc font-semibold text-base sm:text-lg py-2.5 sm:py-3 shadow-md'
+        : 'bg-neutral-800 text-yellow-200 hover:bg-neutral-700 border-b-2 border-neutral-950 font-calc font-semibold text-base sm:text-lg py-2.5 sm:py-3 shadow-md';
+      const opKey = isSolar
+        ? 'bg-orange-500 text-white hover:bg-orange-600 border-b-2 border-orange-700 font-semibold text-base sm:text-lg py-2.5 sm:py-3 shadow-md'
+        : 'bg-amber-600 text-white hover:bg-amber-500 border-b-2 border-amber-800 font-semibold text-base sm:text-lg py-2.5 sm:py-3 shadow-md';
+
+      return (
+        <div className={`min-h-screen w-full transition-colors duration-500 flex flex-col relative ${isSolar ? 'bg-gradient-to-br from-orange-500 via-orange-600 to-amber-600 text-neutral-900' : 'bg-gradient-to-br from-[#070b14] via-[#0d1424] to-[#080d1a] text-yellow-100'}`}>
+          
+          {/* Header */}
+          <header className={`relative z-20 flex items-center justify-between gap-8 px-4 sm:px-8 py-3.5 border-b backdrop-blur-md ${isSolar ? 'bg-orange-600/60 border-orange-400/30 text-white' : 'bg-neutral-950/70 border-yellow-500/20 text-yellow-300'}`}>
+            <div className="flex items-center gap-2">
+              <span className="text-lg sm:text-xl font-tech font-bold tracking-tight">Sana Scientific Calculator</span>
+              <span className={`hidden sm:inline-block text-[11px] font-mono px-2 py-0.5 rounded font-bold uppercase ${isSolar ? 'bg-yellow-300 text-neutral-950' : 'bg-yellow-400/20 text-yellow-300'}`}>SC-991 PRO</span>
+            </div>
+
+            <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+              <button onClick={() => setShowConstants(true)} className="hover:underline cursor-pointer">Constants</button>
+              <button onClick={() => setShowHistory((h) => !h)} className="hover:underline cursor-pointer">Tape ({history.length})</button>
+              <button onClick={() => { setSoundEnabled(!soundEnabled); sound.enabled = !soundEnabled; }} className="hover:underline cursor-pointer">Sound: {soundEnabled ? 'ON' : 'OFF'}</button>
+            </nav>
+
+            {/* Vision Mode Switch */}
+            <div className="flex items-center gap-1.5 p-1 bg-black/20 rounded-xl border border-black/10">
+              <button
+                onClick={() => { sound.playClick('special'); setVisionMode('solar-lemon'); }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${visionMode === 'solar-lemon' ? 'bg-amber-500 text-white shadow-sm' : 'text-neutral-200'}`}
+              >
+                Mode 1: Solar Lemon
+              </button>
+              <button
+                onClick={() => { sound.playClick('special'); setVisionMode('obsidian-cyber'); }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer ${visionMode === 'obsidian-cyber' ? 'bg-neutral-900 text-yellow-300 shadow-sm' : 'text-neutral-200'}`}
+              >
+                Mode 2: Obsidian Cyber
+              </button>
+            </div>
+          </header>
+
+          {/* Main Stage */}
+          <main className="flex-1 flex flex-col items-center justify-center p-3 sm:p-6">
+            <div className="w-full max-w-4xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6">
+              
+              {/* CALCULATOR CHASSIS */}
+              <div className={`w-full max-w-md sm:max-w-lg rounded-3xl p-5 sm:p-6 transition-all duration-300 relative shadow-2xl border-4 ${isSolar ? 'bg-gradient-to-b from-[#fef08a] via-[#fde047] to-[#eab308] border-[#ca8a04]' : 'bg-gradient-to-b from-[#fde047] via-[#facc15] to-[#ca8a04] border-yellow-300'}`}>
+                
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col">
+                    <span className="font-tech text-base sm:text-lg font-black tracking-tight text-neutral-900 flex items-center gap-1.5">
+                      SANA
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/15 text-black font-bold uppercase">SCIENTIFIC</span>
+                    </span>
+                    <span className="text-[10px] font-mono tracking-wider font-semibold text-neutral-800">DUAL POWER // NATURAL DISPLAY</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-900 border border-neutral-700">
+                    <div className="flex gap-0.5">
+                      {[1,2,3,4].map((i) => (
+                        <div key={i} className="w-2.5 sm:w-3 h-5 bg-gradient-to-b from-[#312e81] to-[#0f172a] border border-neutral-600 rounded-[1px]"></div>
+                      ))}
+                    </div>
+                    <span className="text-[8px] font-mono text-amber-400 font-bold uppercase">SOLAR</span>
+                  </div>
+                </div>
+
+                {/* Display */}
+                <div className={`relative w-full rounded-2xl p-4 transition-all duration-300 border shadow-inner ${isSolar ? 'bg-[#d8e285] border-[#b0be53] text-[#1a2507]' : 'bg-[#060a12] border-yellow-400/30 text-yellow-300 shadow-yellow-500/10'}`}>
+                  <div className="flex items-center justify-between text-[11px] font-mono mb-2 border-b pb-1 border-black/10">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { sound.playClick(); setAngleMode(angleMode === 'DEG' ? 'RAD' : 'DEG'); }} className="px-1.5 py-0.5 rounded font-bold bg-black/10 cursor-pointer">{angleMode}</button>
+                      <span className={`px-1 py-0.2 rounded font-bold ${isSecond ? 'bg-amber-600 text-white' : 'opacity-25'}`}>2nd</span>
+                      <span className={`px-1 py-0.2 rounded font-bold ${isHyp ? 'bg-orange-600 text-white' : 'opacity-25'}`}>HYP</span>
+                      <button onClick={() => setFloatMode(floatMode === 'NORM' ? 'SCI' : floatMode === 'SCI' ? 'FIX2' : 'NORM')} className="px-1.5 py-0.5 rounded text-[10px] uppercase font-semibold cursor-pointer">{floatMode}</button>
+                    </div>
+                    <button onClick={handleCopy} className="text-[10px] font-sans font-medium hover:underline cursor-pointer">
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="font-calc text-right text-sm sm:text-base tracking-wide min-h-[1.5rem] truncate">{expression || '0'}</div>
+                  <div className="font-calc font-bold text-right text-2xl sm:text-4xl tracking-tight truncate mt-1">{result || '0'}</div>
+                </div>
+
+                {/* Keypad */}
+                <div className="grid grid-cols-5 gap-1.5 sm:gap-2 mt-3">
+                  <button onClick={() => { sound.playClick('special'); setIsSecond(!isSecond); }} className={`${baseKey} ${isSecond ? 'bg-amber-600 text-white font-bold ring-2 ring-white' : isSolar ? 'bg-amber-400 text-amber-950 font-bold' : 'bg-yellow-500 text-black font-bold'} py-2 text-xs`}>2nd</button>
+                  <button onClick={() => { sound.playClick('special'); setIsHyp(!isHyp); }} className={`${baseKey} ${isHyp ? 'bg-orange-600 text-white font-bold ring-2 ring-white' : isSolar ? 'bg-amber-300 text-amber-950 font-semibold' : 'bg-yellow-600 text-yellow-200 font-semibold'} py-2 text-xs`}>HYP</button>
+                  <button onClick={() => { sound.playClick(); handleInput('('); }} className={`${baseKey} ${sciKey}`}>(</button>
+                  <button onClick={() => { sound.playClick(); handleInput(')'); }} className={`${baseKey} ${sciKey}`}>)</button>
+                  <button onClick={() => { sound.playClick('special'); handleDelete(); }} className={`${baseKey} bg-amber-600 text-white py-2 text-xs font-bold`}>DEL</button>
+
+                  <button onClick={() => { sound.playClick(); handleInput(isHyp ? (isSecond ? 'asinh(' : 'sinh(') : isSecond ? 'asin(' : 'sin('); }} className={`${baseKey} ${sciKey}`}>{isHyp ? (isSecond ? 'asinh' : 'sinh') : isSecond ? 'sin⁻¹' : 'sin'}</button>
+                  <button onClick={() => { sound.playClick(); handleInput(isHyp ? (isSecond ? 'acosh(' : 'cosh(') : isSecond ? 'acos(' : 'cos('); }} className={`${baseKey} ${sciKey}`}>{isHyp ? (isSecond ? 'acosh' : 'cosh') : isSecond ? 'cos⁻¹' : 'cos'}</button>
+                  <button onClick={() => { sound.playClick(); handleInput(isHyp ? (isSecond ? 'atanh(' : 'tanh(') : isSecond ? 'atan(' : 'tan('); }} className={`${baseKey} ${sciKey}`}>{isHyp ? (isSecond ? 'atanh' : 'tanh') : isSecond ? 'tan⁻¹' : 'tan'}</button>
+                  <button onClick={() => { sound.playClick(); handleInput(isSecond ? 'e' : 'π'); }} className={`${baseKey} ${sciKey}`}>{isSecond ? 'e' : 'π'}</button>
+                  <button onClick={() => { sound.playClick('action'); handleClear(); }} className={`${baseKey} bg-rose-600 text-white py-2 text-xs font-bold`}>AC</button>
+
+                  <button onClick={() => { sound.playClick(); handleInput(isSecond ? 'Math.exp(' : 'ln('); }} className={`${baseKey} ${sciKey}`}>{isSecond ? 'eˣ' : 'ln'}</button>
+                  <button onClick={() => { sound.playClick(); handleInput(isSecond ? '10^(' : 'log('); }} className={`${baseKey} ${sciKey}`}>{isSecond ? '10ˣ' : 'log'}</button>
+                  <button onClick={() => { sound.playClick(); handleInput(isSecond ? '^3' : '^2'); }} className={`${baseKey} ${sciKey}`}>{isSecond ? 'x³' : 'x²'}</button>
+                  <button onClick={() => { sound.playClick(); handleInput('^'); }} className={`${baseKey} ${sciKey}`}>xʸ</button>
+                  <button onClick={() => { sound.playClick(); handleInput(isSecond ? '∛(' : '√('); }} className={`${baseKey} ${sciKey}`}>{isSecond ? '∛' : '√'}</button>
+
+                  <button onClick={() => { sound.playClick(); handleInput('7'); }} className={`${baseKey} ${numKey}`}>7</button>
+                  <button onClick={() => { sound.playClick(); handleInput('8'); }} className={`${baseKey} ${numKey}`}>8</button>
+                  <button onClick={() => { sound.playClick(); handleInput('9'); }} className={`${baseKey} ${numKey}`}>9</button>
+                  <button onClick={() => { sound.playClick(); handleInput('%'); }} className={`${baseKey} ${sciKey}`}>%</button>
+                  <button onClick={() => { sound.playClick(); handleInput('÷'); }} className={`${baseKey} ${opKey}`}>÷</button>
+
+                  <button onClick={() => { sound.playClick(); handleInput('4'); }} className={`${baseKey} ${numKey}`}>4</button>
+                  <button onClick={() => { sound.playClick(); handleInput('5'); }} className={`${baseKey} ${numKey}`}>5</button>
+                  <button onClick={() => { sound.playClick(); handleInput('6'); }} className={`${baseKey} ${numKey}`}>6</button>
+                  <button onClick={() => { sound.playClick(); handleInput('Ans'); }} className={`${baseKey} ${sciKey}`}>Ans</button>
+                  <button onClick={() => { sound.playClick(); handleInput('×'); }} className={`${baseKey} ${opKey}`}>×</button>
+
+                  <button onClick={() => { sound.playClick(); handleInput('1'); }} className={`${baseKey} ${numKey}`}>1</button>
+                  <button onClick={() => { sound.playClick(); handleInput('2'); }} className={`${baseKey} ${numKey}`}>2</button>
+                  <button onClick={() => { sound.playClick(); handleInput('3'); }} className={`${baseKey} ${numKey}`}>3</button>
+                  <button onClick={() => { sound.playClick(); handleInput('E'); }} className={`${baseKey} ${sciKey}`}>EXP</button>
+                  <button onClick={() => { sound.playClick(); handleInput('−'); }} className={`${baseKey} ${opKey}`}>−</button>
+
+                  <button onClick={() => { sound.playClick(); handleInput('0'); }} className={`${baseKey} ${numKey}`}>0</button>
+                  <button onClick={() => { sound.playClick(); handleInput('.'); }} className={`${baseKey} ${numKey}`}>.</button>
+                  <button onClick={() => { sound.playClick(); handleInput('−'); }} className={`${baseKey} ${numKey}`}>( - )</button>
+                  <button onClick={() => { sound.playClick(); handleInput('φ'); }} className={`${baseKey} ${sciKey}`}>φ</button>
+                  <button onClick={() => { sound.playClick(); handleInput('+'); }} className={`${baseKey} ${opKey}`}>+</button>
+                </div>
+
+                <button
+                  onClick={() => { sound.playEnter(); handleEvaluate(); }}
+                  className="w-full mt-2 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xl shadow-lg cursor-pointer"
+                >
+                  =
+                </button>
+              </div>
+
+              {/* Tape Panel */}
+              {showHistory && (
+                <div className={`w-full lg:w-72 p-4 rounded-2xl border shadow-xl ${isSolar ? 'bg-amber-100 border-amber-300 text-neutral-900' : 'bg-neutral-900 border-yellow-500/30 text-yellow-100'}`}>
+                  <div className="flex justify-between items-center pb-2 border-b border-black/10 font-bold text-sm">
+                    <span>Tape History</span>
+                    <button onClick={() => setHistory([])} className="text-xs text-rose-600 hover:underline">Clear</button>
+                  </div>
+                  <div className="space-y-2 mt-2 max-h-72 overflow-y-auto font-mono text-xs">
+                    {history.length === 0 ? <p className="opacity-60 text-center py-4">No calculations yet</p> : history.map((item) => (
+                      <div key={item.id} onClick={() => setExpression(item.expression)} className="p-2 rounded bg-white/70 dark:bg-neutral-800 cursor-pointer hover:underline">
+                        <div>{item.expression}</div>
+                        <div className="font-bold text-amber-600 dark:text-yellow-400">= {item.result}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
+
+          {/* Constants Modal */}
+          {showConstants && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-md bg-white dark:bg-neutral-900 text-neutral-900 dark:text-yellow-100 rounded-2xl p-5 border border-yellow-500/30 shadow-2xl">
+                <div className="flex justify-between items-center pb-3 border-b border-black/10 dark:border-white/10 font-bold">
+                  <span>Scientific Constants</span>
+                  <button onClick={() => setShowConstants(false)} className="text-sm px-2 py-1 rounded bg-black/10 dark:bg-white/10">Close</button>
+                </div>
+                <div className="space-y-2 mt-3 max-h-80 overflow-y-auto">
+                  {CONSTANTS.map((c) => (
+                    <button
+                      key={c.symbol}
+                      onClick={() => { handleInput(c.value.toString()); setShowConstants(false); }}
+                      className="w-full text-left p-2.5 rounded-xl border border-black/10 dark:border-white/10 flex justify-between items-center hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                    >
+                      <div>
+                        <span className="font-bold font-mono mr-2 text-amber-600 dark:text-yellow-400">{c.symbol}</span>
+                        <span className="text-xs">{c.name}</span>
+                      </div>
+                      <span className="text-xs font-mono opacity-60">{c.value.toExponential(3)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer className="py-2.5 text-center text-xs opacity-80 border-t border-black/10">
+            Sana Scientific Calculator · Vision Mode Engine · Solar Orange & Lemon Yellow Edition
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
